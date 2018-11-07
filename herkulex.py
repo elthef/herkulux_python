@@ -19,14 +19,24 @@ For usage of this code for  commercial purposes contact Sastra Robotics
 India Pvt. Ltd. (mailto:contact@sastrarobotics.com)
 
 
-""" 
+"""
 import time
+
 try:
     # PySerial Module
     import serial
 except:
     raise ImportError("couldnt find pySerial")
 
+#LED Colours
+LED_OFF    = 0x00
+LED_GREEN  = 0x01
+LED_BLUE   = 0x02
+LED_CYAN   = 0x03
+LED_RED    = 0x04
+LED_GREEN2 = 0x05
+LED_PINK   = 0x06
+LED_WHITE  = 0x07
 
 # Commands
 EEP_WRITE_REQ = 0x01
@@ -49,8 +59,7 @@ STAT_ACK = 0x47
 ROLLBACK_ACK = 0x48
 REBOOT_ACK = 0x49
 
-
-#Addresses
+# Addresses
 MODEL_NO1_EEP = 0
 MODEL_NO2_EEP = 1
 VERSION1_EEP = 2
@@ -97,7 +106,7 @@ POSITION_KP_RAM = 24
 POSITION_KD_EEP = 32
 POSITION_KD_RAM = 26
 POSITION_KI_EEP = 34
-POSITION_KI_RAM =28
+POSITION_KI_RAM = 28
 POSITION_FEEDFORWARD_GAIN1_EEP = 36
 POSITION_FEEDFORWARD_GAIN1_RAM = 30
 POSITION_FEEDFORWARD_GAIN2_EEP = 38
@@ -114,8 +123,8 @@ PACKET_GARBAGE_CHECK_PERIOD_EEP = 46
 PACKET_GARBAGE_CHECK_PERIOD_RAM = 40
 STOP_DETECTION_PERIOD_EEP = 47
 STOP_DETECTION_PERIOD_RAM = 41
-OVERLOAD_DETECTION_PERIOD_EEP        = 48
-OVERLOAD_DETECTION_PERIOD_RAM        = 42
+OVERLOAD_DETECTION_PERIOD_EEP = 48
+OVERLOAD_DETECTION_PERIOD_RAM = 42
 STOP_THRESHOLD_EEP = 49
 STOP_THRESHOLD_RAM = 43
 INPOSITION_MARGIN_EEP = 50
@@ -149,6 +158,8 @@ BROADCAST_ID = 0xFE
 
 SERPORT = None
 
+
+
 def connect(portname, baudrate):
     """ Connect to the Herkulex bus
 
@@ -162,10 +173,11 @@ def connect(portname, baudrate):
     """
     global SERPORT
     try:
-        SERPORT = serial.Serial(portname, baudrate, timeout = 0.1)
+        SERPORT = serial.Serial(portname, baudrate, timeout=0.1)
 
     except:
         raise HerkulexError("could not open the serial port")
+
 
 def close():
     """ Close the Serial port
@@ -196,7 +208,8 @@ def checksum1(data, stringlength):
     value_buffer = 0
     for count in range(0, stringlength):
         value_buffer = value_buffer ^ data[count]
-    return value_buffer&0xFE
+    return value_buffer & 0xFE
+
 
 def checksum2(data):
     """ Calculate Checksum 2
@@ -209,8 +222,7 @@ def checksum2(data):
     Returns:
         int:  The calculated checksum 2
     """
-    return (~data)&0xFE
-
+    return (~data) & 0xFE
 
 
 def send_data(data):
@@ -223,6 +235,20 @@ def send_data(data):
 
     Raises:
         SerialException: Error occured while opening serial port
+        ff
+        ff
+        data.append(0x0C)
+        data.append(servoid)
+        data.append(I_JOG_REQ)
+        data.append(goalposition_lsb)
+        data.append(goalposition_msb)
+        csm1
+        csm2
+        data.append(led)
+        data.append(servoid)   0xdb
+        data.append(goaltime)
+        send_data(data)
+
     """
     datalength = len(data)
     csm1 = checksum1(data, datalength)
@@ -239,7 +265,7 @@ def send_data(data):
     try:
 
         SERPORT.write(stringtosend.decode('string-escape'))
-        print(stringtosend)
+#        print(stringtosend)
 
     except:
         raise HerkulexError("could not communicate with motors")
@@ -262,6 +288,42 @@ def clear_errors():
     data.append(0x00)
     send_data(data)
 
+def clear_error(BROADCAST_ID):
+    """ Clears the errors register of all Herkulex servos
+
+    Args:
+        none
+
+    """
+    data = []
+    data.append(0x0B)
+    data.append(BROADCAST_ID)
+    data.append(RAM_WRITE_REQ)
+    data.append(STATUS_ERROR_RAM)
+    data.append(BYTE2)
+    data.append(0x00)
+    data.append(0x00)
+    send_data(data)
+
+def scale_angle(input_value, input_min, input_max, out_min, out_max):
+    """ scale a value from one range to another
+    """
+    position = 0
+    angle = input_value + 180
+    position = int(angle / 0.02778) + 9903
+    #print("position", position)
+    return position
+
+
+def scale_pos(position, input_min, input_max, out_min, out_max):
+    """ scale a value from one range to another
+    """
+    angle = (position - 9903) * 0.02778
+    out_value = angle - 180
+    #print("angle", out_value)
+    return out_value
+
+
 def scale(input_value, input_min, input_max, out_min, out_max):
     """ scale a value from one range to another
     """
@@ -271,10 +333,10 @@ def scale(input_value, input_min, input_max, out_min, out_max):
     # Convert the left range into a 0-1 range (float)
     valuescaled = float(input_value - input_min) / float(input_span)
     # Convert the 0-1 range into a value in the right range.
-    return out_min + (valuescaled * output_span)
+    return int(out_min + (valuescaled * output_span))
+
 
 def scan_servos(doPrint=True):
-
     """Scan for the herkulex servos connected
 
 	This function will scan for all the herkulex servos connected
@@ -288,17 +350,18 @@ def scan_servos(doPrint=True):
     print("scan_servos")
     servos = []
     for servo_id in range(0x00, 0xFE):
-	if doPrint:
-		print("scanning id " + str(servo_id))
-	try:
-	  model = get_model(servo_id)
-          if model:
-             if doPrint:
-                print("found id" + str(servo_id))
-             servos += [(servo_id, model)]
-	except:
-	 pass
+        if doPrint:
+            print("scanning id " + str(servo_id))
+        try:
+            model = get_model(servo_id)
+            if model:
+                if doPrint:
+                    print("found id" + str(servo_id))
+                servos += [(servo_id, model)]
+        except:
+            pass
     return servos
+
 
 def get_model(servoid):
     """ Get the servo model
@@ -316,21 +379,284 @@ def get_model(servoid):
     """
     data = []
     data.append(0x09)
-    data.append(servoid) #
-    data.append(EEP_READ_REQ) # 0x02
-    data.append(MODEL_NO1_EEP)# 0x00
-    data.append(BYTE1) # 0x01
+    data.append(servoid)  #
+    data.append(EEP_READ_REQ)  # 0x02
+    data.append(MODEL_NO1_EEP)  # 0x00
+    data.append(BYTE1)  # 0x01
 
     send_data(data)
     rxdata = []
     try:
         rxdata = SERPORT.read(12)
-        return ord(rxdata[9])&0xFF
+        return ord(rxdata[9]) & 0xFF
     except:
         raise HerkulexError("get_model could not communicate with motors")
 
-#def turn_ledON(colour):
 
+def set_led(servoid, colorcode):
+    """ Set the LED Color of Herkulex
+
+    Args:
+        colorcode (int): The code for colors
+                        (0x00-OFF
+                         0x02-BLUE
+                         0x03-CYAN
+                         0x04-RED
+                         0x05-ORANGE
+                         0x06-VIOLET
+                         0x07-WHITE
+    """
+    data = []
+    data.append(0x0A)
+    data.append(servoid)
+    data.append(RAM_WRITE_REQ)
+    data.append(LED_CONTROL_RAM)
+    data.append(0x01)
+    data.append(colorcode)
+    send_data(data)
+
+
+def get_servo_position(servoid, servomodel):
+    """ Gets the current position of Herkulex
+
+        Args:
+            none
+
+        Returns:
+            int: position of the servo- 0 to 1023
+
+        Raises:
+            SerialException: Error occured while opening serial port
+
+        """
+    # global SERPORT
+
+    data = []
+    data.append(0x09)
+    data.append(servoid)
+    data.append(RAM_READ_REQ)
+    data.append(CALIBRATED_POSITION_RAM)
+    data.append(BYTE2)
+    send_data(data)
+    rxdata = []
+    try:
+        rxdata = SERPORT.read(13)
+
+        if (servomodel == 0x06) or (servomodel == 0x04):
+            #print("received data: ", rxdata)
+            return ((ord(rxdata[10]) & 0xff) << 8) | (ord(rxdata[9]) & 0xFF)
+        else:
+            #print("received data: ", rxdata)
+            # print ord(rxdata[9]),ord(rxdata[10])
+            return ((ord(rxdata[10]) & 0x03) << 8) | (ord(rxdata[9]) & 0xFF)
+    except HerkulexError:
+        print("Could not read from the servos. Check connection")
+
+
+def set_servo_position(servoid, goalposition, goaltime, led):
+    """ Set the position of Herkulex
+
+        Enable torque using torque_on function before calling this
+
+        Args:
+
+            goalposition (int): The desired position, min-0 & max-1023
+            goaltime (int): the time taken to move from present
+             position to goalposition
+            led (int): the LED color
+                       0x00 LED off
+                       0x04 GREEN
+                       0x08 BLUE
+                       0x10 RED
+        """
+    goalposition_msb = int(goalposition) >> 8
+    goalposition_lsb = int(goalposition) & 0xff
+
+    data = []
+    data.append(0x0C)
+    data.append(servoid)
+    data.append(I_JOG_REQ)
+    data.append(goalposition_lsb)
+    data.append(goalposition_msb)
+    data.append(led)
+    data.append(servoid)
+    data.append(goaltime)
+    send_data(data)
+
+
+def torque_off(servoid):
+    """ Set the torques of Herkulex to zero
+
+    In this mode, position control and velocity control
+    will not work, enable torque before that. Also the
+    servo shaft is freely movable
+
+    Args:
+        none
+    """
+    data = []
+    data.append(0x0A)
+    data.append(servoid)
+    data.append(RAM_WRITE_REQ)
+    data.append(TORQUE_CONTROL_RAM)
+    data.append(0x01)
+    data.append(0x00)
+    send_data(data)
+
+
+def torque_on(servoid):
+    """ Enable the torques of Herkulex
+
+    In this mode, position control and velocity control
+    will work.
+
+    Args:
+        none
+    """
+    data = []
+    data.append(0x0A)
+    data.append(servoid)
+    data.append(RAM_WRITE_REQ)
+    data.append(TORQUE_CONTROL_RAM)
+    data.append(0x01)
+    data.append(0x60)
+    send_data(data)
+
+
+def get_torque_state(servoid):
+    """ get the torque state of motor
+
+    Returns:
+        bool: True if torque is enabled, else False
+    """
+    data = []
+    data.append(0x09)
+    data.append(servoid)
+    data.append(RAM_READ_REQ)
+    data.append(TORQUE_CONTROL_RAM)
+    data.append(BYTE2)
+    send_data(data)
+    rxdata = []
+    try:
+        rxdata = SERPORT.read(13)
+        return bool(ord(rxdata[9]))
+    except HerkulexError:
+        raise HerkulexError("could not communicate with motors")
+
+
+def set_servo_angle(servoid, servomodel, goalangle, goaltime, led):
+    """ Sets the servo angle (in degrees)
+
+        Enable torque using torque_on function before calling this
+
+        Args:
+            goalangle (int): The desired angle in degrees, range -150 to 150
+            goaltime (int): the time taken to move from present
+             position to goalposition
+            led (int): the LED color
+                       0x00 LED off
+                       0x04 GREEN
+                       0x08 BLUE
+                       0x10 RED
+        """
+    if (servomodel == 0x06) or (servomodel == 0x04):
+        goalposition = scale_angle(goalangle, -159.9, 159.6, 10627, 22129)
+    else:
+        goalposition = scale_angle(goalangle, -150, 150, 21, 1002)
+
+    #print("goal position", goalposition)
+    set_servo_position(servoid, goalposition, goaltime, led)
+
+
+def get_servo_angle(servoid, servomodel):
+    """ Gets the current angle of the servo in degrees
+
+        Args:
+            none
+        Returns:
+            int : the current servo angle
+        """
+
+    servoposition = get_servo_position(servoid, servomodel)
+    if (servomodel == 0x06) or (servomodel == 0x04):
+        return scale_pos(servoposition, 10627, 22129, -159.9, 159.6)
+    else:
+        return scale_pos(servoposition, 21, 1002, -150, 150)
+
+
+def moveOneAngle0402(servoid, goalangle, goaltime, iled):
+    """ Move Herculux Servo 0402
+
+        moveOneAngle0402(servoid, goalangle, goaltime, led)
+        angle limit is set to -159.9 to 159.6
+     """
+    iBlue = 0
+    iGreen =0
+    iRed = 0
+    if iled == 1:
+        iGreen = 1
+    elif iled == 2:
+        iBlue = 1
+    elif iled == 4:
+        iRed = 1
+    else:
+        iRed = 1
+        iGreen = 0
+        iBlue = 1
+
+    led = iGreen*4 + iBlue*8 + iRed*16
+
+    goalposition = scale_angle(goalangle, -159.9, 159.6, 10627, 22129)
+    #print("moveOneAngle0402",goalposition)
+    set_servo_position(servoid, goalposition, goaltime, led)
+
+
+def moveOneAngle(servoid, goalangle, goaltime, iled):
+    """ Move Herculux Servo """
+
+    iBlue = 0
+    iGreen =0
+    iRed = 0
+    if iled == 1:
+        iGreen = 1
+    elif iled == 2:
+        iBlue = 1
+    elif iled == 4:
+        iRed = 1
+    else:
+        iRed = 1
+        iGreen = 0
+        iBlue = 1
+
+    led = iGreen*4 + iBlue*8 + iRed*16
+
+    goalposition = scale(goalangle, -150, 150, 21, 1002)
+    #print("moveOneAngle0201", goalposition)
+    set_servo_position(servoid, goalposition, goaltime, led)
+
+def get_servo_angle0402(servoid):
+    """ Gets the current angle of the servo in degrees
+
+        Args:
+            none
+        Returns:
+            int : the current servo angle
+        """
+
+    servoposition = get_servo_position(servoid,0x04)
+    return scale(servoposition, 10627, 22129, -159.9, 159.6)
+
+def get_servo_angle(servoid):
+    """ Gets the current angle of the servo in degrees
+
+        Args:
+            none
+        Returns:
+            int : the current servo angle
+        """
+
+    servoposition = get_servo_position(servoid,0x02)
+    return scale(servoposition, 21, 1002, -150, 150)
 
 class servo:
     """ The servo class
@@ -338,7 +664,6 @@ class servo:
     This class handles the interface to the herkulex smart servos
 
     """
-
 
     def __init__(self, servoid):
         """ servo class initialization
@@ -348,45 +673,38 @@ class servo:
    	"""
         self.servoid = servoid
 
-
         self.servomodel = get_model(servoid)
 
+    def get_model(self):
+        """ Get the servo model
 
+        This function gets the model of the herkules servo, provided its id
 
-    # def get_model(self):
-    #     """ Get the servo model
-    #
-    #     This function gets the model of the herkules servo, provided its id
-    #
-    #     Args:
-    #         none
-    #
-    #     Returns:
-    #         int:  an integer corresponding to the model number
-    #               0x06 for DRS-602
-    #               0x04 for DRS-402
-    #               0x02 for DRS-202
-    #     """
-    #
-    #
-    #
-    #
-	#     print("get_model")
-    #     data = []
-    #     data.append(0x09)
-    #     data.append(self.servoid)
-    #     data.append(EEP_READ_REQ)
-    #     data.append(MODEL_NO1_EEP)
-    #     data.append(BYTE1)
-    #     send_data(data)
-    #
-    #     rxdata = []
-    #     try:
-    #         rxdata = SERPORT.read(12)
-    #         return ord(rxdata[9])&0xFF
-    #     except:
-    #         raise HerkulexError("could not communicate with motors")
+        Args:
+            none
 
+        Returns:
+            int:  an integer corresponding to the model number
+                  0x06 for DRS-602
+                  0x04 for DRS-402
+                  0x02 for DRS-202
+        """
+
+        print("get_model")
+        data = []
+        data.append(0x09)
+        data.append(self.servoid)
+        data.append(EEP_READ_REQ)
+        data.append(MODEL_NO1_EEP)
+        data.append(BYTE1)
+        send_data(data)
+
+        rxdata = []
+        try:
+            rxdata = SERPORT.read(12)
+            return ord(rxdata[9]) & 0xFF
+        except:
+            raise HerkulexError("could not communicate with motors")
 
     def get_servo_status(self):
         """ Get the error status of servo
@@ -413,7 +731,7 @@ class servo:
         rxdata = []
         try:
             rxdata = SERPORT.read(12)
-            return ord(rxdata[9])&0xFF
+            return ord(rxdata[9]) & 0xFF
         except:
             raise HerkulexError("could not communicate with motors")
 
@@ -441,11 +759,11 @@ class servo:
         rxdata = []
         try:
             rxdata = SERPORT.read(12)
-            return ord(rxdata[9])&0xFF
+            return ord(rxdata[9]) & 0xFF
         except HerkulexError:
             raise HerkulexError("could not communicate with motors")
 
-    def  set_led(self, colorcode):
+    def set_led(self, colorcode):
         """ Set the LED Color of Herkulex
 
         Args:
@@ -585,7 +903,7 @@ class servo:
             SerialException: Error occured while opening serial port
 
         """
-        #global SERPORT
+        # global SERPORT
 
         data = []
         data.append(0x09)
@@ -597,14 +915,14 @@ class servo:
         rxdata = []
         try:
             rxdata = SERPORT.read(13)
-            if (self.servomodel==0x06) or (self.servomodel == 0x04):
-                return ((ord(rxdata[10])&0xff)<<8) | (ord(rxdata[9])&0xFF)
+            if (self.servomodel == 0x06) or (self.servomodel == 0x04):
+                return ((ord(rxdata[10]) & 0xff) << 8) | (ord(rxdata[9]) & 0xFF)
             else:
-                #print ord(rxdata[9]),ord(rxdata[10])
-                return ((ord(rxdata[10])&0x03)<<8) | (ord(rxdata[9])&0xFF)
+                # print ord(rxdata[9]),ord(rxdata[10])
+                return ((ord(rxdata[10]) & 0x03) << 8) | (ord(rxdata[9]) & 0xFF)
 
         except HerkulexError:
-            print "Could not read from the servos. Check connection"
+            print("Could not read from the servos. Check connection")
 
     def get_servo_temperature(self):
         """ Gets the current temperature of Herkulex
@@ -659,10 +977,10 @@ class servo:
         rxdata = []
         try:
             rxdata = SERPORT.read(13)
-            if ord(rxdata[10])<=127:
-                return ((ord(rxdata[10])&0x03)<<8) | (ord(rxdata[9])&0xFF)
+            if ord(rxdata[10]) <= 127:
+                return ((ord(rxdata[10]) & 0x03) << 8) | (ord(rxdata[9]) & 0xFF)
             else:
-                return (ord(rxdata[10])-0xFF)*0xFF + (ord(rxdata[9])&0xFF)-0xFF
+                return (ord(rxdata[10]) - 0xFF) * 0xFF + (ord(rxdata[9]) & 0xFF) - 0xFF
         except HerkulexError:
             raise HerkulexError("could not communicate with motors")
 
@@ -679,21 +997,21 @@ class servo:
                        0x10 RED
 
         """
-        if goalspeed>0 :
-            goalspeed_msb = (int(goalspeed)& 0xFF00) >> 8
+        if goalspeed > 0:
+            goalspeed_msb = (int(goalspeed) & 0xFF00) >> 8
             goalspeed_lsb = int(goalspeed) & 0xff
-        elif goalspeed<0 :
-            goalspeed_msb = 64+(255- ((int(goalspeed)& 0xFF00) >> 8))
+        elif goalspeed < 0:
+            goalspeed_msb = 64 + (255 - ((int(goalspeed) & 0xFF00) >> 8))
             goalspeed_lsb = (abs(goalspeed) & 0xff)
 
-        #print goalspeed_msb,goalspeed_lsb
+        # print goalspeed_msb,goalspeed_lsb
         data = []
         data.append(0x0C)
         data.append(self.servoid)
         data.append(I_JOG_REQ)
         data.append(goalspeed_lsb)
         data.append(goalspeed_msb)
-        data.append(0x02|led)
+        data.append(0x02 | led)
         data.append(self.servoid)
         data.append(0x00)
         send_data(data)
@@ -713,8 +1031,8 @@ class servo:
         data.append(RAM_WRITE_REQ)
         data.append(POSITION_KP_RAM)
         data.append(BYTE2)
-        data.append( pvalue_lsb)
-        data.append( pvalue_msb)
+        data.append(pvalue_lsb)
+        data.append(pvalue_msb)
         send_data(data)
 
     def set_position_i(self, ivalue):
@@ -768,7 +1086,7 @@ class servo:
         rxdata = []
         try:
             rxdata = SERPORT.read(13)
-            return (ord(rxdata[10])*256)+(ord(rxdata[9])&0xff)
+            return (ord(rxdata[10]) * 256) + (ord(rxdata[9]) & 0xff)
         except HerkulexError:
             raise HerkulexError("could not communicate with motors")
 
@@ -786,7 +1104,7 @@ class servo:
         rxdata = []
         try:
             rxdata = SERPORT.read(13)
-            return (ord(rxdata[10])*256)+(ord(rxdata[9])&0xff)
+            return (ord(rxdata[10]) * 256) + (ord(rxdata[9]) & 0xff)
         except HerkulexError:
             raise HerkulexError("Could not read from motors")
 
@@ -804,7 +1122,7 @@ class servo:
         rxdata = []
         try:
             rxdata = SERPORT.read(13)
-            return (ord(rxdata[10])*256)+(ord(rxdata[9])&0xff)
+            return (ord(rxdata[10]) * 256) + (ord(rxdata[9]) & 0xff)
         except HerkulexError:
             raise HerkulexError("could not communicate with motors")
 
@@ -816,7 +1134,7 @@ class servo:
         ival = self.get_position_i()
         dval = self.get_position_d()
 
-        #write P value
+        # write P value
         pvalue_msb = int(pval) >> 8
         pvalue_lsb = int(pval) & 0xff
 
@@ -826,8 +1144,8 @@ class servo:
         data_p.append(EEP_WRITE_REQ)
         data_p.append(POSITION_KP_EEP)
         data_p.append(BYTE2)
-        data_p.append( pvalue_lsb)
-        data_p.append( pvalue_msb)
+        data_p.append(pvalue_lsb)
+        data_p.append(pvalue_msb)
         send_data(data_p)
 
         # write I value
@@ -840,8 +1158,8 @@ class servo:
         data_i.append(EEP_WRITE_REQ)
         data_i.append(POSITION_KI_EEP)
         data_i.append(BYTE2)
-        data_i.append( ivalue_lsb)
-        data_i.append( ivalue_msb)
+        data_i.append(ivalue_lsb)
+        data_i.append(ivalue_msb)
         send_data(data_i)
 
         # write D value
@@ -854,9 +1172,29 @@ class servo:
         data_d.append(EEP_WRITE_REQ)
         data_d.append(POSITION_KD_EEP)
         data_d.append(BYTE2)
-        data_d.append( dvalue_lsb)
-        data_d.append( dvalue_msb)
+        data_d.append(dvalue_lsb)
+        data_d.append(dvalue_msb)
         send_data(data_d)
+
+    def scale_pos(self, position, input_min, input_max, out_min, out_max):
+        """ scale a value from one range to another
+        """
+        angle = (position - 9903) * 0.02778
+        out_value = angle - 180
+#        print("angle", out_value)
+        return out_value
+
+    def scale(self, input_value, input_min, input_max, out_min, out_max):
+        """ scale a value from one range to another
+        """
+        # Figure out how 'wide' each range is
+        input_span = input_max - input_min
+        output_span = out_max - out_min
+        # Convert the left range into a 0-1 range (float)
+        valuescaled = float(input_value - input_min) / float(input_span)
+        # Convert the 0-1 range into a value in the right range.
+
+        return out_min + (valuescaled * output_span)
 
     def set_servo_angle(self, goalangle, goaltime, led):
         """ Sets the servo angle (in degrees)
@@ -873,10 +1211,14 @@ class servo:
                        0x08 BLUE
                        0x10 RED
         """
-        if (self.servomodel==0x06) or (self.servomodel == 0x04):
+        if (self.servomodel == 0x06) or (self.servomodel == 0x04):
             goalposition = scale(goalangle, -159.9, 159.6, 10627, 22129)
+            # goalposition = self.scale(goalangle, -159.9, 159.6, 10627, 22129)
         else:
             goalposition = scale(goalangle, -150, 150, 21, 1002)
+            # goalposition = self.scale(goalangle, -150, 150, 21, 1002)
+
+#        print("goal postion class", goalposition)
 
         self.set_servo_position(goalposition, goaltime, led)
 
@@ -889,16 +1231,17 @@ class servo:
             int : the current servo angle
         """
 
-        servoposition =  self.get_servo_position()
-        if (self.servomodel==0x06) or (self.servomodel == 0x04):
+        servoposition = self.get_servo_position()
+        if (self.servomodel == 0x06) or (self.servomodel == 0x04):
             return scale(servoposition, 10627, 22129, -159.9, 159.6)
         else:
             return scale(servoposition, 21, 1002, -150, 150)
 
+
 class HerkulexError(Exception):
     """ Class to handle sservo errors
     """
-    def __init__(self,  message):
+
+    def __init__(self, message):
         super(HerkulexError, self).__init__(message)
         self.message = message
-
